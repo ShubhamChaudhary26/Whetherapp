@@ -1,57 +1,119 @@
-import React, { useState } from "react";
-import axios from "axios";
+import React, { useState, useEffect } from "react";
+import { io } from "socket.io-client";
+
+const socket = io("http://localhost:5000"); // Replace with your server URL
 
 function App() {
-  const [city, setCity] = useState("");
-  const [weather, setWeather] = useState(null);
-  const [error, setError] = useState("");
+  const [username, setUsername] = useState("");
+  const [room, setRoom] = useState("");
+  const [message, setMessage] = useState("");
+  const [messages, setMessages] = useState([]);
+  const [typing, setTyping] = useState("");
 
-  const API_KEY = "35c9cf6a85cb571339cccf2bf64cb5ad";
+  // Handle incoming messages
+  useEffect(() => {
+    socket.on("receive_message", (data) => {
+      setMessages((prevMessages) => [...prevMessages, data]);
+    });
 
-  const fetchWeather = async () => {
-    if (!city) {
-      setError("Please enter a city name.");
-      return;
+    socket.on("typing", (data) => {
+      setTyping(`${data.username} is typing...`);
+    });
+
+    socket.on("stop_typing", () => {
+      setTyping("");
+    });
+
+    return () => {
+      socket.off("receive_message");
+      socket.off("typing");
+      socket.off("stop_typing");
+    };
+  }, []);
+
+  const joinRoom = () => {
+    if (username && room) {
+      socket.emit("join_room", { username, room });
     }
-    try {
-      setError("");
-      const response = await axios.get(
-        `https://api.openweathermap.org/data/2.5/weather?q=${city}&appid=${API_KEY}&units=metric`
-      );
-      setWeather(response.data);
-    } catch (err) {
-      setError("Unable to find weather for the specified city.");
+  };
+
+  const sendMessage = () => {
+    if (message && room) {
+      const messageData = { username, room, message, time: new Date().toLocaleTimeString() };
+      socket.emit("send_message", messageData);
+      setMessages((prevMessages) => [...prevMessages, messageData]);
+      setMessage("");
+      socket.emit("stop_typing", room);
+    }
+  };
+
+  const handleTyping = () => {
+    if (room) {
+      socket.emit("typing", { username, room });
+    }
+  };
+
+  const stopTyping = () => {
+    if (room) {
+      socket.emit("stop_typing", room);
     }
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-blue-200 p-4">
-      <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-md">
-        <h1 className="text-2xl font-bold text-center mb-4">Weather App</h1>
-        <input
-          type="text"
-          className="border rounded-lg w-full p-2 mb-4"
-          placeholder="Enter city name"
-          value={city}
-          onChange={(e) => setCity(e.target.value)}
-        />
-        <button
-          className="bg-blue-500 text-white py-2 px-4 rounded-lg w-full hover:bg-blue-600"
-          onClick={fetchWeather}
-        >
-          Get Weather
-        </button>
-        {error && <p className="text-red-500 mt-4">{error}</p>}
-        {weather && (
-          <div className="mt-6 text-center">
-            <h2 className="text-xl font-bold">{weather.name}</h2>
-            <p className="text-lg">
-              {weather.weather[0].description.toUpperCase()}
-            </p>
-            <p className="text-4xl font-bold">
-              {Math.round(weather.main.temp)}°C
-            </p>
-          </div>
+    <div className="flex flex-col items-center min-h-screen bg-gray-100 p-4">
+      <div className="w-full max-w-md bg-white rounded-lg shadow p-6">
+        <h1 className="text-2xl font-bold mb-4 text-center">Real-Time Chat</h1>
+        {!room ? (
+          <>
+            <input
+              type="text"
+              placeholder="Username"
+              className="w-full p-2 mb-4 border rounded"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+            />
+            <input
+              type="text"
+              placeholder="Room"
+              className="w-full p-2 mb-4 border rounded"
+              value={room}
+              onChange={(e) => setRoom(e.target.value)}
+            />
+            <button
+              className="w-full p-2 bg-blue-500 text-white rounded"
+              onClick={joinRoom}
+            >
+              Join Room
+            </button>
+          </>
+        ) : (
+          <>
+            <div className="border p-2 rounded-lg mb-4 h-64 overflow-y-auto">
+              {messages.map((msg, index) => (
+                <div key={index} className="mb-2">
+                  <strong>{msg.username}: </strong>
+                  <span>{msg.message}</span>
+                  <div className="text-xs text-gray-500">{msg.time}</div>
+                </div>
+              ))}
+            </div>
+            {typing && <p className="text-green-500">{typing}</p>}
+            <input
+              type="text"
+              placeholder="Type your message..."
+              className="w-full p-2 mb-4 border rounded"
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              onKeyPress={handleTyping}
+              onBlur={stopTyping}
+            />
+            <button
+              className="w-full p-2 bg-blue-500 text-white rounded"
+              onClick={sendMessage}
+            >
+              Send
+            </button>
+          </>
         )}
       </div>
     </div>
@@ -59,3 +121,4 @@ function App() {
 }
 
 export default App;
+
